@@ -1778,6 +1778,7 @@ fn execute_traced<'a, 'b: 'a>(
                 result: solana_sbpf::tracer::TraceResult::Error {
                     message: format!("Failed to get instruction context: {:?}", e),
                 },
+                text_section_vaddr: 0,
                 control_flow_graph: None,
                 dataflow: None,
             };
@@ -1794,6 +1795,7 @@ fn execute_traced<'a, 'b: 'a>(
                 result: solana_sbpf::tracer::TraceResult::Error {
                     message: format!("Failed to get program key: {:?}", e),
                 },
+                text_section_vaddr: 0,
                 control_flow_graph: None,
                 dataflow: None,
             };
@@ -1831,6 +1833,7 @@ fn execute_traced<'a, 'b: 'a>(
                     result: solana_sbpf::tracer::TraceResult::Error {
                         message: format!("Serialization failed: {:?}", e),
                     },
+                    text_section_vaddr: 0,
                     control_flow_graph: None,
                     dataflow: None,
                 };
@@ -1871,6 +1874,7 @@ fn execute_traced<'a, 'b: 'a>(
                     result: solana_sbpf::tracer::TraceResult::Error {
                         message: format!("Failed to create VM: {:?}", e),
                     },
+                    text_section_vaddr: 0,
                     control_flow_graph: None,
                     dataflow: None,
                 };
