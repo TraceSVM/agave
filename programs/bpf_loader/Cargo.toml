@@ -27,6 +27,7 @@ shuttle-test = [
     "solana-svm-type-overrides/shuttle-test",
 ]
 svm-internal = []
+semantic-tracer = ["solana-sbpf/semantic-tracer", "solana-program-runtime/semantic-tracer"]
 
 [dependencies]
 agave-syscalls = { workspace = true }

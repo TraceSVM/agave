@@ -1,3 +1,6 @@
+#[cfg(feature = "semantic-tracer")]
+use solana_sbpf::tracer::TraceContext;
+
 use {
     crate::{
         execution_budget::{SVMTransactionExecutionBudget, SVMTransactionExecutionCost},
@@ -203,6 +206,24 @@ pub struct InvokeContext<'a, 'ix_data> {
     pub syscall_context: Vec<Option<SyscallContext>>,
     /// Pairs of index in TX instruction trace and VM register trace
     register_traces: Vec<(usize, Vec<[u64; 12]>)>,
+    /// Semantic tracer configuration
+    #[cfg(feature = "semantic-tracer")]
+    tracing_config: TracingConfig,
+    /// Collected trace contexts from BPF program executions
+    #[cfg(feature = "semantic-tracer")]
+    trace_contexts: Vec<TraceContext>,
+}
+
+/// Configuration for semantic tracing
+#[cfg(feature = "semantic-tracer")]
+#[derive(Clone, Default)]
+pub struct TracingConfig {
+    /// Enable semantic tracing
+    pub enabled: bool,
+    /// Enable control flow graph analysis
+    pub enable_cfg: bool,
+    /// Enable data flow analysis
+    pub enable_dataflow: bool,
 }
 
 impl<'a, 'ix_data> InvokeContext<'a, 'ix_data> {
@@ -227,7 +248,45 @@ impl<'a, 'ix_data> InvokeContext<'a, 'ix_data> {
             timings: ExecuteDetailsTimings::default(),
             syscall_context: Vec::new(),
             register_traces: Vec::new(),
+            #[cfg(feature = "semantic-tracer")]
+            tracing_config: TracingConfig::default(),
+            #[cfg(feature = "semantic-tracer")]
+            trace_contexts: Vec::new(),
         }
+    }
+
+    /// Enable semantic tracing for this invoke context.
+    #[cfg(feature = "semantic-tracer")]
+    pub fn enable_tracing(&mut self, enable_cfg: bool, enable_dataflow: bool) {
+        self.tracing_config = TracingConfig {
+            enabled: true,
+            enable_cfg,
+            enable_dataflow,
+        };
+    }
+
+    /// Check if semantic tracing is enabled.
+    #[cfg(feature = "semantic-tracer")]
+    pub fn is_tracing_enabled(&self) -> bool {
+        self.tracing_config.enabled
+    }
+
+    /// Get the tracing configuration.
+    #[cfg(feature = "semantic-tracer")]
+    pub fn get_tracing_config(&self) -> &TracingConfig {
+        &self.tracing_config
+    }
+
+    /// Add a trace context from a BPF program execution.
+    #[cfg(feature = "semantic-tracer")]
+    pub fn add_trace_context(&mut self, trace: TraceContext) {
+        self.trace_contexts.push(trace);
+    }
+
+    /// Take all collected trace contexts.
+    #[cfg(feature = "semantic-tracer")]
+    pub fn take_trace_contexts(&mut self) -> Vec<TraceContext> {
+        std::mem::take(&mut self.trace_contexts)
     }
 
     /// Push a stack frame onto the invocation stack

@@ -56,6 +56,9 @@ use {
     std::{cell::RefCell, mem, rc::Rc},
 };
 
+#[cfg(feature = "semantic-tracer")]
+use solana_sbpf::tracer::{Tracer, TraceContext};
+
 #[cfg_attr(feature = "svm-internal", qualifiers(pub))]
 const DEFAULT_LOADER_COMPUTE_UNITS: u64 = 570;
 #[cfg_attr(feature = "svm-internal", qualifiers(pub))]
@@ -1516,6 +1519,10 @@ fn execute<'a, 'b: 'a>(
         })
         .collect::<Vec<_>>();
 
+    // Capture tracing config before creating VM to avoid borrow conflicts
+    #[cfg(feature = "semantic-tracer")]
+    let tracing_config = invoke_context.get_tracing_config().clone();
+
     let mut create_vm_time = Measure::start("create_vm");
     let execution_result = {
         let compute_meter_prev = invoke_context.get_remaining();
@@ -1536,7 +1543,27 @@ fn execute<'a, 'b: 'a>(
         if provide_instruction_data_offset_in_vm_r2 {
             vm.registers[2] = instruction_data_offset as u64;
         }
+
+        // Check if semantic tracing is enabled and use traced execution if so
+        #[cfg(feature = "semantic-tracer")]
+        let (compute_units_consumed, result, maybe_trace) = if tracing_config.enabled {
+            let mut tracer = Tracer::from_executable(executable, Some(program_id.to_string()));
+            if tracing_config.enable_cfg {
+                tracer.enable_cfg_analysis();
+            }
+            if tracing_config.enable_dataflow {
+                tracer.enable_dataflow(true);
+            }
+            let (cu, prog_result, trace_context) = tracer.execute(&mut vm, executable);
+            (cu, prog_result, Some(trace_context))
+        } else {
+            let (cu, prog_result) = vm.execute_program(executable, !use_jit);
+            (cu, prog_result, None)
+        };
+
+        #[cfg(not(feature = "semantic-tracer"))]
         let (compute_units_consumed, result) = vm.execute_program(executable, !use_jit);
+
         let register_trace = std::mem::take(&mut vm.register_trace);
         MEMORY_POOL.with_borrow_mut(|memory_pool| {
             memory_pool.put_stack(stack);
@@ -1545,6 +1572,13 @@ fn execute<'a, 'b: 'a>(
             debug_assert!(memory_pool.heap_len() <= MAX_INSTRUCTION_STACK_DEPTH);
         });
         drop(vm);
+
+        // Add trace context if tracing was enabled
+        #[cfg(feature = "semantic-tracer")]
+        if let Some(trace) = maybe_trace {
+            invoke_context.add_trace_context(trace);
+        }
+
         invoke_context.insert_register_trace(register_trace);
         if let Some(execute_time) = invoke_context.execute_time.as_mut() {
             execute_time.stop();
@@ -1699,6 +1733,265 @@ fn execute<'a, 'b: 'a>(
     invoke_context.timings.deserialize_us += deserialize_time.as_us();
 
     execute_or_deserialize_result
+}
+
+/// Execute a BPF program with semantic tracing enabled.
+///
+/// This function is similar to `execute` but captures a detailed execution trace
+/// including instruction-level events, memory accesses, syscalls, and optionally
+/// control flow graph and data flow analysis.
+///
+/// # Arguments
+/// * `executable` - The compiled BPF program to execute
+/// * `invoke_context` - The execution context
+/// * `enable_cfg` - If true, builds a control flow graph during execution
+/// * `enable_dataflow` - If true, performs data flow analysis during execution
+///
+/// # Returns
+/// A tuple of (execution_result, trace_context) where trace_context contains the full trace.
+#[cfg(feature = "semantic-tracer")]
+#[cfg_attr(feature = "svm-internal", qualifiers(pub))]
+#[allow(dead_code)] // May be useful as standalone API
+fn execute_traced<'a, 'b: 'a>(
+    executable: &'a Executable<InvokeContext<'static, 'static>>,
+    invoke_context: &'a mut InvokeContext<'b, 'b>,
+    enable_cfg: bool,
+    enable_dataflow: bool,
+) -> (Result<(), Box<dyn std::error::Error>>, TraceContext) {
+    // We dropped the lifetime tracking in the Executor by setting it to 'static,
+    // thus we need to reintroduce the correct lifetime of InvokeContext here again.
+    let executable = unsafe {
+        mem::transmute::<
+            &'a Executable<InvokeContext<'static, 'static>>,
+            &'a Executable<InvokeContext<'b, 'b>>,
+        >(executable)
+    };
+    let log_collector = invoke_context.get_log_collector();
+    let transaction_context = &invoke_context.transaction_context;
+    let instruction_context = match transaction_context.get_current_instruction_context() {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            let empty_trace = TraceContext {
+                program_id: None,
+                execution_tree: Vec::new(),
+                total_compute_units: 0,
+                result: solana_sbpf::tracer::TraceResult::Error {
+                    message: format!("Failed to get instruction context: {:?}", e),
+                },
+                control_flow_graph: None,
+                dataflow: None,
+            };
+            return (Err(Box::new(e)), empty_trace);
+        }
+    };
+    let program_id = match instruction_context.get_program_key() {
+        Ok(id) => *id,
+        Err(e) => {
+            let empty_trace = TraceContext {
+                program_id: None,
+                execution_tree: Vec::new(),
+                total_compute_units: 0,
+                result: solana_sbpf::tracer::TraceResult::Error {
+                    message: format!("Failed to get program key: {:?}", e),
+                },
+                control_flow_graph: None,
+                dataflow: None,
+            };
+            return (Err(Box::new(e)), empty_trace);
+        }
+    };
+    let is_loader_deprecated =
+        instruction_context.get_program_owner().map(|o| o == bpf_loader_deprecated::id()).unwrap_or(false);
+
+    let stricter_abi_and_runtime_constraints = invoke_context
+        .get_feature_set()
+        .stricter_abi_and_runtime_constraints;
+    let account_data_direct_mapping = invoke_context.get_feature_set().account_data_direct_mapping;
+    let mask_out_rent_epoch_in_vm_serialization = invoke_context
+        .get_feature_set()
+        .mask_out_rent_epoch_in_vm_serialization;
+    let provide_instruction_data_offset_in_vm_r2 = invoke_context
+        .get_feature_set()
+        .provide_instruction_data_offset_in_vm_r2;
+
+    let mut serialize_time = Measure::start("serialize");
+    let (parameter_bytes, regions, accounts_metadata, instruction_data_offset) =
+        match serialization::serialize_parameters(
+            &instruction_context,
+            stricter_abi_and_runtime_constraints,
+            account_data_direct_mapping,
+            mask_out_rent_epoch_in_vm_serialization,
+        ) {
+            Ok(result) => result,
+            Err(e) => {
+                let empty_trace = TraceContext {
+                    program_id: Some(program_id.to_string()),
+                    execution_tree: Vec::new(),
+                    total_compute_units: 0,
+                    result: solana_sbpf::tracer::TraceResult::Error {
+                        message: format!("Serialization failed: {:?}", e),
+                    },
+                    control_flow_graph: None,
+                    dataflow: None,
+                };
+                return (Err(Box::new(e)), empty_trace);
+            }
+        };
+    serialize_time.stop();
+
+    // Note: account_region_addrs not used in traced execution path
+    // but kept for consistency with non-traced path
+    let _account_region_addrs = accounts_metadata
+        .iter()
+        .map(|m| {
+            let vm_end = m
+                .vm_data_addr
+                .saturating_add(m.original_data_len as u64)
+                .saturating_add(if !is_loader_deprecated {
+                    MAX_PERMITTED_DATA_INCREASE as u64
+                } else {
+                    0
+                });
+            m.vm_data_addr..vm_end
+        })
+        .collect::<Vec<_>>();
+
+    let mut create_vm_time = Measure::start("create_vm");
+    let (execution_result, trace_context) = {
+        let compute_meter_prev = invoke_context.get_remaining();
+        create_vm!(vm, executable, regions, accounts_metadata, invoke_context);
+        let (mut vm, stack, heap) = match vm {
+            Ok(info) => info,
+            Err(e) => {
+                ic_logger_msg!(log_collector, "Failed to create SBF VM: {}", e);
+                let empty_trace = TraceContext {
+                    program_id: Some(program_id.to_string()),
+                    execution_tree: Vec::new(),
+                    total_compute_units: 0,
+                    result: solana_sbpf::tracer::TraceResult::Error {
+                        message: format!("Failed to create VM: {:?}", e),
+                    },
+                    control_flow_graph: None,
+                    dataflow: None,
+                };
+                return (Err(Box::new(InstructionError::ProgramEnvironmentSetupFailure)), empty_trace);
+            }
+        };
+        create_vm_time.stop();
+
+        vm.context_object_pointer.execute_time = Some(Measure::start("execute"));
+        vm.registers[1] = ebpf::MM_INPUT_START;
+
+        // SIMD-0321: Provide offset to instruction data in VM register 2.
+        if provide_instruction_data_offset_in_vm_r2 {
+            vm.registers[2] = instruction_data_offset as u64;
+        }
+
+        // Create and configure the tracer
+        let mut tracer = Tracer::from_executable(executable, Some(program_id.to_string()));
+        if enable_cfg {
+            tracer.enable_cfg_analysis();
+        }
+        if enable_dataflow {
+            tracer.enable_dataflow(true);
+        }
+
+        // Execute with tracing (interpreter mode only)
+        let (compute_units_consumed, result, trace_context) = tracer.execute(&mut vm, executable);
+
+        let register_trace = std::mem::take(&mut vm.register_trace);
+        MEMORY_POOL.with_borrow_mut(|memory_pool| {
+            memory_pool.put_stack(stack);
+            memory_pool.put_heap(heap);
+            debug_assert!(memory_pool.stack_len() <= MAX_INSTRUCTION_STACK_DEPTH);
+            debug_assert!(memory_pool.heap_len() <= MAX_INSTRUCTION_STACK_DEPTH);
+        });
+        drop(vm);
+        invoke_context.insert_register_trace(register_trace);
+        if let Some(execute_time) = invoke_context.execute_time.as_mut() {
+            execute_time.stop();
+            invoke_context.timings.execute_us += execute_time.as_us();
+        }
+
+        ic_logger_msg!(
+            log_collector,
+            "Program {} consumed {} of {} compute units (traced)",
+            &program_id,
+            compute_units_consumed,
+            compute_meter_prev
+        );
+        let (_returned_from_program_id, return_data) =
+            invoke_context.transaction_context.get_return_data();
+        if !return_data.is_empty() {
+            stable_log::program_return(&log_collector, &program_id, return_data);
+        }
+
+        let exec_result = match result {
+            ProgramResult::Ok(status) if status != SUCCESS => {
+                let error: InstructionError = status.into();
+                Err(Box::new(error) as Box<dyn std::error::Error>)
+            }
+            ProgramResult::Err(mut error) => {
+                if invoke_context
+                    .get_feature_set()
+                    .deplete_cu_meter_on_vm_failure
+                    && !matches!(error, EbpfError::SyscallError(_))
+                {
+                    invoke_context.consume(invoke_context.get_remaining());
+                }
+
+                if stricter_abi_and_runtime_constraints {
+                    if let EbpfError::SyscallError(err) = error {
+                        error = EbpfError::SyscallError(err);
+                    }
+                }
+
+                Err(if let EbpfError::SyscallError(err) = error {
+                    err
+                } else {
+                    error.into()
+                })
+            }
+            _ => Ok(()),
+        };
+        (exec_result, trace_context)
+    };
+
+    fn deserialize_parameters(
+        invoke_context: &mut InvokeContext,
+        parameter_bytes: &[u8],
+        stricter_abi_and_runtime_constraints: bool,
+        account_data_direct_mapping: bool,
+    ) -> Result<(), InstructionError> {
+        serialization::deserialize_parameters(
+            &invoke_context
+                .transaction_context
+                .get_current_instruction_context()?,
+            stricter_abi_and_runtime_constraints,
+            account_data_direct_mapping,
+            parameter_bytes,
+            &invoke_context.get_syscall_context()?.accounts_metadata,
+        )
+    }
+
+    let mut deserialize_time = Measure::start("deserialize");
+    let execute_or_deserialize_result = execution_result.and_then(|_| {
+        deserialize_parameters(
+            invoke_context,
+            parameter_bytes.as_slice(),
+            stricter_abi_and_runtime_constraints,
+            account_data_direct_mapping,
+        )
+        .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)
+    });
+    deserialize_time.stop();
+
+    // Update the timings
+    invoke_context.timings.serialize_us += serialize_time.as_us();
+    invoke_context.timings.create_vm_us += create_vm_time.as_us();
+    invoke_context.timings.deserialize_us += deserialize_time.as_us();
+
+    (execute_or_deserialize_result, trace_context)
 }
 
 #[cfg_attr(feature = "svm-internal", qualifiers(pub))]
