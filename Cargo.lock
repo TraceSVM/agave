@@ -3396,8 +3396,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
- "windows-result 0.4.1",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -10520,7 +10520,7 @@ checksum = "dcf09694a0fc14e5ffb18f9b7b7c0f15ecb6eac5b5610bf76a1853459d19daf9"
 [[package]]
 name = "solana-sbpf"
 version = "0.13.1"
-source = "git+https://github.com/TraceSVM/sbpf.git#b8210fcf5faf7bd0310d316a5b13d3555108f41c"
+source = "git+https://github.com/TraceSVM/sbpf.git#405288bbb5b2c25993c85d2f7764a27c431a9104"
 dependencies = [
  "byteorder",
  "combine 3.8.1",

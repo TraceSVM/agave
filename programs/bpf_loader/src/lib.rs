@@ -1575,7 +1575,48 @@ fn execute<'a, 'b: 'a>(
 
         // Add trace context if tracing was enabled
         #[cfg(feature = "semantic-tracer")]
-        if let Some(trace) = maybe_trace {
+        if let Some(mut trace) = maybe_trace {
+            // Populate input_accounts from accounts_metadata and instruction_context
+            if let Ok(ic) = invoke_context
+                .transaction_context
+                .get_current_instruction_context()
+            {
+                let num_accounts = ic.get_number_of_instruction_accounts();
+                for i in 0..num_accounts {
+                    let is_dup = ic
+                        .is_instruction_account_duplicate(i)
+                        .ok()
+                        .flatten();
+                    let pubkey = ic
+                        .get_key_of_instruction_account(i)
+                        .map(|k| k.to_string())
+                        .unwrap_or_default();
+                    let (owner, data_len) = if let Ok(acct) = ic.try_borrow_instruction_account(i) {
+                        (acct.get_owner().to_string(), acct.get_data().len() as u64)
+                    } else {
+                        (String::new(), 0)
+                    };
+                    let is_signer = ic.is_instruction_account_signer(i).unwrap_or(false);
+                    let is_writable = ic.is_instruction_account_writable(i).unwrap_or(false);
+                    let vm_data_addr = accounts_metadata
+                        .get(i as usize)
+                        .map(|m| m.vm_data_addr)
+                        .unwrap_or(0);
+
+                    trace.input_accounts.push(
+                        solana_sbpf::tracer::TraceAccountInfo {
+                            index: i as usize,
+                            pubkey,
+                            owner,
+                            vm_data_addr,
+                            data_len,
+                            is_duplicate: is_dup.is_some(),
+                            is_writable,
+                            is_signer,
+                        },
+                    );
+                }
+            }
             invoke_context.add_trace_context(trace);
         }
 
@@ -1836,6 +1877,7 @@ fn execute_traced<'a, 'b: 'a>(
                     text_section_vaddr: 0,
                     control_flow_graph: None,
                     dataflow: None,
+                    input_accounts: Vec::new(),
                 };
                 return (Err(Box::new(e)), empty_trace);
             }
@@ -1877,6 +1919,7 @@ fn execute_traced<'a, 'b: 'a>(
                     text_section_vaddr: 0,
                     control_flow_graph: None,
                     dataflow: None,
+                    input_accounts: Vec::new(),
                 };
                 return (Err(Box::new(InstructionError::ProgramEnvironmentSetupFailure)), empty_trace);
             }
@@ -1958,6 +2001,49 @@ fn execute_traced<'a, 'b: 'a>(
             }
             _ => Ok(()),
         };
+        // Populate input_accounts on the trace context
+        let mut trace_context = trace_context;
+        if let Ok(ic) = invoke_context
+            .transaction_context
+            .get_current_instruction_context()
+        {
+            let num_accounts = ic.get_number_of_instruction_accounts();
+            for i in 0..num_accounts {
+                let is_dup = ic
+                    .is_instruction_account_duplicate(i)
+                    .ok()
+                    .flatten();
+                let pubkey = ic
+                    .get_key_of_instruction_account(i)
+                    .map(|k| k.to_string())
+                    .unwrap_or_default();
+                let (owner, data_len) = if let Ok(acct) = ic.try_borrow_instruction_account(i) {
+                    (acct.get_owner().to_string(), acct.get_data().len() as u64)
+                } else {
+                    (String::new(), 0)
+                };
+                let is_signer = ic.is_instruction_account_signer(i).unwrap_or(false);
+                let is_writable = ic.is_instruction_account_writable(i).unwrap_or(false);
+                let vm_data_addr = accounts_metadata
+                    .get(i as usize)
+                    .map(|m| m.vm_data_addr)
+                    .unwrap_or(0);
+
+                trace_context.input_accounts.push(
+                    solana_sbpf::tracer::TraceAccountInfo {
+                        index: i as usize,
+                        pubkey,
+                        owner,
+                        vm_data_addr,
+                        data_len,
+                        is_duplicate: is_dup.is_some(),
+                        is_writable,
+                        is_signer,
+                    },
+                );
+            }
+        }
+
         (exec_result, trace_context)
     };
 
