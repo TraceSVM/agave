@@ -1526,7 +1526,7 @@ fn execute<'a, 'b: 'a>(
     let mut create_vm_time = Measure::start("create_vm");
     let execution_result = {
         let compute_meter_prev = invoke_context.get_remaining();
-        create_vm!(vm, executable, regions, accounts_metadata, invoke_context);
+        create_vm!(vm, executable, regions, accounts_metadata.clone(), invoke_context);
         let (mut vm, stack, heap) = match vm {
             Ok(info) => info,
             Err(e) => {
@@ -1576,11 +1576,23 @@ fn execute<'a, 'b: 'a>(
         // Add trace context if tracing was enabled
         #[cfg(feature = "semantic-tracer")]
         if let Some(mut trace) = maybe_trace {
-            // Populate input_accounts from accounts_metadata and instruction_context
+            // Populate input_accounts from accounts_metadata and instruction_context.
+            // Build pubkey→vm_data_addr map since accounts_metadata uses
+            // transaction-level indexing which differs from instruction accounts.
             if let Ok(ic) = invoke_context
                 .transaction_context
                 .get_current_instruction_context()
             {
+                let mut pubkey_to_vm_addr: std::collections::HashMap<String, u64> =
+                    std::collections::HashMap::new();
+                for (meta_idx, meta) in accounts_metadata.iter().enumerate() {
+                    if let Ok(acct) = invoke_context.transaction_context
+                        .get_account_at_index(meta_idx as u16)
+                    {
+                        let key = acct.borrow().pubkey().to_string();
+                        pubkey_to_vm_addr.insert(key, meta.vm_data_addr);
+                    }
+                }
                 let num_accounts = ic.get_number_of_instruction_accounts();
                 for i in 0..num_accounts {
                     let is_dup = ic
@@ -1598,9 +1610,9 @@ fn execute<'a, 'b: 'a>(
                     };
                     let is_signer = ic.is_instruction_account_signer(i).unwrap_or(false);
                     let is_writable = ic.is_instruction_account_writable(i).unwrap_or(false);
-                    let vm_data_addr = accounts_metadata
-                        .get(i as usize)
-                        .map(|m| m.vm_data_addr)
+                    let vm_data_addr = pubkey_to_vm_addr
+                        .get(&pubkey)
+                        .copied()
                         .unwrap_or(0);
 
                     trace.input_accounts.push(
@@ -1904,7 +1916,7 @@ fn execute_traced<'a, 'b: 'a>(
     let mut create_vm_time = Measure::start("create_vm");
     let (execution_result, trace_context) = {
         let compute_meter_prev = invoke_context.get_remaining();
-        create_vm!(vm, executable, regions, accounts_metadata, invoke_context);
+        create_vm!(vm, executable, regions, accounts_metadata.clone(), invoke_context);
         let (mut vm, stack, heap) = match vm {
             Ok(info) => info,
             Err(e) => {
@@ -2001,12 +2013,24 @@ fn execute_traced<'a, 'b: 'a>(
             }
             _ => Ok(()),
         };
-        // Populate input_accounts on the trace context
+        // Populate input_accounts on the trace context.
+        // Build pubkey→vm_data_addr map since accounts_metadata uses
+        // transaction-level indexing which differs from instruction accounts.
         let mut trace_context = trace_context;
         if let Ok(ic) = invoke_context
             .transaction_context
             .get_current_instruction_context()
         {
+            let mut pubkey_to_vm_addr: std::collections::HashMap<String, u64> =
+                std::collections::HashMap::new();
+            for (meta_idx, meta) in accounts_metadata.iter().enumerate() {
+                if let Ok(acct) = invoke_context.transaction_context
+                    .get_account_at_index(meta_idx as u16)
+                {
+                    let key = acct.borrow().pubkey().to_string();
+                    pubkey_to_vm_addr.insert(key, meta.vm_data_addr);
+                }
+            }
             let num_accounts = ic.get_number_of_instruction_accounts();
             for i in 0..num_accounts {
                 let is_dup = ic
@@ -2024,9 +2048,9 @@ fn execute_traced<'a, 'b: 'a>(
                 };
                 let is_signer = ic.is_instruction_account_signer(i).unwrap_or(false);
                 let is_writable = ic.is_instruction_account_writable(i).unwrap_or(false);
-                let vm_data_addr = accounts_metadata
-                    .get(i as usize)
-                    .map(|m| m.vm_data_addr)
+                let vm_data_addr = pubkey_to_vm_addr
+                    .get(&pubkey)
+                    .copied()
                     .unwrap_or(0);
 
                 trace_context.input_accounts.push(
