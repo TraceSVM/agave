@@ -1586,11 +1586,10 @@ fn execute<'a, 'b: 'a>(
                 let mut pubkey_to_vm_addr: std::collections::HashMap<String, u64> =
                     std::collections::HashMap::new();
                 for (meta_idx, meta) in accounts_metadata.iter().enumerate() {
-                    if let Ok(acct) = invoke_context.transaction_context
-                        .get_account_at_index(meta_idx as u16)
+                    if let Ok(key) = invoke_context.transaction_context
+                        .get_key_of_account_at_index(meta_idx as u16)
                     {
-                        let key = acct.borrow().pubkey().to_string();
-                        pubkey_to_vm_addr.insert(key, meta.vm_data_addr);
+                        pubkey_to_vm_addr.insert(key.to_string(), meta.vm_data_addr);
                     }
                 }
                 let num_accounts = ic.get_number_of_instruction_accounts();
@@ -1834,6 +1833,7 @@ fn execute_traced<'a, 'b: 'a>(
                 text_section_vaddr: 0,
                 control_flow_graph: None,
                 dataflow: None,
+                input_accounts: Vec::new(),
             };
             return (Err(Box::new(e)), empty_trace);
         }
@@ -1851,6 +1851,7 @@ fn execute_traced<'a, 'b: 'a>(
                 text_section_vaddr: 0,
                 control_flow_graph: None,
                 dataflow: None,
+                input_accounts: Vec::new(),
             };
             return (Err(Box::new(e)), empty_trace);
         }
@@ -2024,11 +2025,10 @@ fn execute_traced<'a, 'b: 'a>(
             let mut pubkey_to_vm_addr: std::collections::HashMap<String, u64> =
                 std::collections::HashMap::new();
             for (meta_idx, meta) in accounts_metadata.iter().enumerate() {
-                if let Ok(acct) = invoke_context.transaction_context
-                    .get_account_at_index(meta_idx as u16)
+                if let Ok(key) = invoke_context.transaction_context
+                    .get_key_of_account_at_index(meta_idx as u16)
                 {
-                    let key = acct.borrow().pubkey().to_string();
-                    pubkey_to_vm_addr.insert(key, meta.vm_data_addr);
+                    pubkey_to_vm_addr.insert(key.to_string(), meta.vm_data_addr);
                 }
             }
             let num_accounts = ic.get_number_of_instruction_accounts();
