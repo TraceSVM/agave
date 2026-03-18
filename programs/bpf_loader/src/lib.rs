@@ -1577,8 +1577,6 @@ fn execute<'a, 'b: 'a>(
         #[cfg(feature = "semantic-tracer")]
         if let Some(mut trace) = maybe_trace {
             // Populate input_accounts from accounts_metadata and instruction_context.
-            // Build pubkey→vm_data_addr map since accounts_metadata uses
-            // transaction-level indexing which differs from instruction accounts.
             if let Ok(ic) = invoke_context
                 .transaction_context
                 .get_current_instruction_context()
@@ -1586,9 +1584,9 @@ fn execute<'a, 'b: 'a>(
                 let mut pubkey_to_vm_addr: std::collections::HashMap<String, u64> =
                     std::collections::HashMap::new();
                 for (meta_idx, meta) in accounts_metadata.iter().enumerate() {
-                    if let Ok(key) = invoke_context.transaction_context
-                        .get_key_of_account_at_index(meta_idx as u16)
-                    {
+                    // Use instruction-level indexing (not transaction-level) since
+                    // accounts_metadata is ordered by instruction account index.
+                    if let Ok(key) = ic.get_key_of_instruction_account(meta_idx as u16) {
                         pubkey_to_vm_addr.insert(key.to_string(), meta.vm_data_addr);
                     }
                 }
@@ -2015,8 +2013,6 @@ fn execute_traced<'a, 'b: 'a>(
             _ => Ok(()),
         };
         // Populate input_accounts on the trace context.
-        // Build pubkey→vm_data_addr map since accounts_metadata uses
-        // transaction-level indexing which differs from instruction accounts.
         let mut trace_context = trace_context;
         if let Ok(ic) = invoke_context
             .transaction_context
@@ -2025,9 +2021,9 @@ fn execute_traced<'a, 'b: 'a>(
             let mut pubkey_to_vm_addr: std::collections::HashMap<String, u64> =
                 std::collections::HashMap::new();
             for (meta_idx, meta) in accounts_metadata.iter().enumerate() {
-                if let Ok(key) = invoke_context.transaction_context
-                    .get_key_of_account_at_index(meta_idx as u16)
-                {
+                // Use instruction-level indexing (not transaction-level) since
+                // accounts_metadata is ordered by instruction account index.
+                if let Ok(key) = ic.get_key_of_instruction_account(meta_idx as u16) {
                     pubkey_to_vm_addr.insert(key.to_string(), meta.vm_data_addr);
                 }
             }
