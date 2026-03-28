@@ -363,6 +363,7 @@ impl<'ix_data> TransactionContext<'ix_data> {
         if let Some(index_in_transaction) = self.find_index_of_account(&instructions::id()) {
             let mut mut_account_ref = self.accounts.try_borrow_mut(index_in_transaction)?;
             if mut_account_ref.owner() != &solana_sdk_ids::sysvar::id() {
+                eprintln!("DEBUG push() InvalidAccountOwner: instructions sysvar at tx_idx={} has owner={}, expected sysvar program. nesting_level={}", index_in_transaction, mut_account_ref.owner(), nesting_level);
                 return Err(InstructionError::InvalidAccountOwner);
             }
             instructions::store_current_index_checked(

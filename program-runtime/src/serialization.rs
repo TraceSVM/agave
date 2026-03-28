@@ -659,6 +659,7 @@ fn deserialize_parameters_aligned<I: IntoIterator<Item = usize>>(
             start += size_of::<u64>(); // rent_epoch
             if borrowed_account.get_owner().to_bytes() != owner {
                 // Change the owner at the end so that we are allowed to change the lamports and data before
+                eprintln!("DEBUG deser_aligned: account {} owner mismatch: expected={}, buffer={:?}", instruction_account_index, borrowed_account.get_owner(), &owner[..]);
                 borrowed_account.set_owner(owner)?;
             }
         }
