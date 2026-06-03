@@ -170,7 +170,7 @@ dependencies = [
  "solana-rpc",
  "solana-runtime",
  "solana-runtime-transaction",
- "solana-sbpf",
+ "solana-sbpf 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "solana-sdk-ids",
  "solana-shred-version",
  "solana-signature",
@@ -324,7 +324,7 @@ dependencies = [
  "solana-program-entrypoint",
  "solana-program-runtime",
  "solana-pubkey 4.0.0",
- "solana-sbpf",
+ "solana-sbpf 0.13.1 (git+https://github.com/TraceSVM/sbpf.git)",
  "solana-sdk-ids",
  "solana-secp256k1-recover",
  "solana-sha256-hasher",
@@ -2762,7 +2762,7 @@ version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
 dependencies = [
- "rustix 1.1.2",
+ "rustix 1.1.4",
  "windows-link",
 ]
 
@@ -3796,9 +3796,9 @@ checksum = "2c4a545a15244c7d945065b5d392b2d2d7f21526fba56ce51467b06ed445e8f7"
 
 [[package]]
 name = "libc"
-version = "0.2.178"
+version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37c93d8daa9d8a012fd8ab92f088405fb202ea0b6ab73ee2482ae66af4f42091"
+checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
 name = "libloading"
@@ -3944,9 +3944,9 @@ checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.11.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "litemap"
@@ -5446,14 +5446,14 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.1.2"
+version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd15f8a2c5551a84d56efdc1cd049089e409ac19a3072d5037a17fd70719ff3e"
+checksum = "b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190"
 dependencies = [
  "bitflags 2.10.0",
  "errno",
  "libc",
- "linux-raw-sys 0.11.0",
+ "linux-raw-sys 0.12.1",
  "windows-sys 0.61.2",
 ]
 
@@ -6507,7 +6507,7 @@ dependencies = [
  "solana-program-entrypoint",
  "solana-program-runtime",
  "solana-pubkey 4.0.0",
- "solana-sbpf",
+ "solana-sbpf 0.13.1 (git+https://github.com/TraceSVM/sbpf.git)",
  "solana-sdk-ids",
  "solana-svm-feature-set",
  "solana-svm-log-collector",
@@ -7791,7 +7791,7 @@ dependencies = [
  "solana-packet 4.0.0",
  "solana-program-runtime",
  "solana-pubkey 4.0.0",
- "solana-sbpf",
+ "solana-sbpf 0.13.1 (git+https://github.com/TraceSVM/sbpf.git)",
  "solana-sdk-ids",
  "solana-svm-log-collector",
  "solana-svm-measure",
@@ -8202,7 +8202,7 @@ dependencies = [
  "solana-program-entrypoint",
  "solana-pubkey 4.0.0",
  "solana-rent",
- "solana-sbpf",
+ "solana-sbpf 0.13.1 (git+https://github.com/TraceSVM/sbpf.git)",
  "solana-sdk-ids",
  "solana-slot-hashes",
  "solana-stable-layout",
@@ -8264,7 +8264,7 @@ dependencies = [
  "solana-pubkey 4.0.0",
  "solana-rent",
  "solana-runtime",
- "solana-sbpf",
+ "solana-sbpf 0.13.1 (git+https://github.com/TraceSVM/sbpf.git)",
  "solana-sdk-ids",
  "solana-signer",
  "solana-stable-layout",
@@ -8768,6 +8768,22 @@ dependencies = [
  "byteorder",
  "combine 3.8.1",
  "gdbstub",
+ "hash32",
+ "libc",
+ "log",
+ "rand 0.8.5",
+ "rustc-demangle",
+ "thiserror 2.0.17",
+ "winapi",
+]
+
+[[package]]
+name = "solana-sbpf"
+version = "0.13.1"
+source = "git+https://github.com/TraceSVM/sbpf.git#25e4f691d1ed165d3295ba7bbfda692ae639ee80"
+dependencies = [
+ "byteorder",
+ "combine 3.8.1",
  "hash32",
  "libc",
  "log",
@@ -9537,7 +9553,7 @@ dependencies = [
  "solana-instructions-sysvar",
  "solana-pubkey 4.0.0",
  "solana-rent",
- "solana-sbpf",
+ "solana-sbpf 0.13.1 (git+https://github.com/TraceSVM/sbpf.git)",
  "solana-sdk-ids",
 ]
 
@@ -10444,14 +10460,14 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.23.0"
+version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d31c77bdf42a745371d260a26ca7163f1e0924b64afa0b688e61b5a9fa02f16"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
  "getrandom 0.3.3",
  "once_cell",
- "rustix 1.1.2",
+ "rustix 1.1.4",
  "windows-sys 0.61.2",
 ]
 
@@ -11908,7 +11924,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
 dependencies = [
  "libc",
- "rustix 1.1.2",
+ "rustix 1.1.4",
 ]
 
 [[package]]
